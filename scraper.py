@@ -4,56 +4,92 @@ import matplotlib.pyplot as plt
 from bs4 import BeautifulSoup as soup
 from urllib.request import Request, urlopen
 import nltk
-nltk.downloader.download('vader_lexicon')
+import ssl
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from datetime import date, timedelta
+
+
+try:
+	_create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+	pass
+else:
+	ssl._create_default_https_context = _create_unverified_https_context
+
+nltk.downloader.download('vader_lexicon')
 
 
 def main():
-    news = get_news()
-    scores = get_sentiment(news)
-    plot(scores)
+	parsed = get_news()
+	scores = get_sentiment(parsed)
+	plot(scores)
 
 
 def get_news():
-    # Input
-    symbol = input('Enter a ticker: ')
-    print('Getting data for ' + symbol + '...\n')
+	# Input
+	ticker = input('Enter a ticker: ')
+	print('Getting data for ' + ticker + '...\n')
 
-    # Set up scraper
-    url = ("http://finviz.com/quote.ashx?t=" + symbol.lower())
-    req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    webpage = urlopen(req).read()
-    html = soup(webpage, "html.parser")
+	# Set up scraper
+	url = ("https://finviz.com/quote.ashx?t=" + ticker.lower())
+	#req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+	req = Request(url=url, headers={'user-agent': 'news'})
+	webpage = urlopen(req).read()
+	html = soup(webpage, "html.parser")
 
-    try:
-        # Find news table
-        news = pd.read_html(str(html), attrs={'class': 'fullview-news-outer'})[0]
-        links = []
-        for a in html.find_all('a', class_="tab-link-news"):
-            links.append(a['href'])
+	# Find news table
+	news_table = html.find(id = 'news-table') # gets the html object of entire table
+	ignore_source = ['Motley Fool', 'TheStreet.com'] # sources to exclude
 
-        # Clean up news dataframe
-        news.columns = ['date', 'headline']
-        news['link'] = links
-        news['date'] = pd.to_datetime(news['date'], dayfirst=True)
-        news['date'] = [d.date() for d in news['date']]
-        return news
+	date_allowed = []
+	start = input("Enter the date/press enter for today's news (Ex: Dec-27-20) or 'All' for all the available news: ")
+	if len(start) == 0:
+		start = date.today().strftime("%b-%d-%y")   
+		date_allowed.append(start)
+	
+	parsed = []    
+	for row in news_table.findAll('tr'):  # for each row that contains 'tr'
+		title = row.a.text
+		source = row.span.text
+		date = row.td.text.split(' ')
+		if len(date) > 1:     # both date and time, ex: Dec-27-20 10:00PM
+			date1 = date[0]
+			time = date[1]
+		else:time = date[0] # only time is given ex: 05:00AM
 
-    except Exception as e:
-        return e
+		if source.strip() not in ignore_source:
+			if start.lower() == 'all':
+				parsed.append([ticker, date1, time, title])                                
+			elif date1 in date_allowed:
+				parsed.append([ticker, date1, time, title])                
+			else: break
+	
+	return parsed
+
+def get_sentiment(parsed):
+	df = pd.DataFrame(parsed, columns=['Ticker', 'date', 'Time', 'Title'])
+	vader = SentimentIntensityAnalyzer()
+	# for every title in data set, give the compund score
+	score = lambda title: vader.polarity_scores(title)['compound']
+	df['compound'] = df['Title'].apply(score)   # adds compund score to data frame
+	print(df)
+
+	# Visualization of Sentiment Analysis
+	df['date'] = pd.to_datetime(df.date).dt.date # takes date comlumn convert it to date/time format
+	return df
 
 
-def get_sentiment(news):
-    vader = SentimentIntensityAnalyzer()
-    news['compound'] = news['headline'].apply(lambda score: vader.polarity_scores(score)['compound'])
-    news['sentiment'] = news['compound'].apply(lambda c: 'pos' if c > 0 else('neg' if c < 0 else 'neutral'))
-    return news
+def plot(df):
+	plt.figure(figsize=(6,6))      # figure size
+	# unstack() allows us to have dates as x-axis
+	mean_df = df.groupby(['date', 'Ticker']).mean() # avg compund score for each date
+	mean_df = mean_df.unstack() 
 
-
-def plot(scores):
-    scores['sentiment'].value_counts().plot(kind='bar')
-    plt.show()
+	# xs (cross section of compund) get rids of compund label
+	mean_df = mean_df.xs('compound', axis="columns")
+	mean_df.plot(kind='bar')
+	plt.show()
 
 
 if __name__ == '__main__':
-    main()
+	main()
