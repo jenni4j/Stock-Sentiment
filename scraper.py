@@ -40,6 +40,7 @@ def get_news():
 	# Find news table
 	news_table = html.find(id = 'news-table') # gets the html object of entire table
 	ignore_source = ['Motley Fool', 'TheStreet.com'] # sources to exclude
+	print(news_table)
 
 	date_allowed = []
 	start = input("Enter the date/press enter for today's news (Ex: Dec-27-20) or 'All' for all the available news: ")
@@ -52,6 +53,7 @@ def get_news():
 		title = row.a.text
 		source = row.span.text
 		date = row.td.text.split(' ')
+		print(date)
 		if len(date) > 1:     # both date and time, ex: Dec-27-20 10:00PM
 			date1 = date[0]
 			time = date[1]
@@ -74,20 +76,13 @@ def get_sentiment(parsed):
 	df['compound'] = df['Title'].apply(score)   # adds compund score to data frame
 	print(df)
 
-	# Visualization of Sentiment Analysis
-	df['date'] = pd.to_datetime(df.date).dt.date # takes date comlumn convert it to date/time format
 	return df
 
 
 def plot(df):
-	plt.figure(figsize=(6,6))      # figure size
-	# unstack() allows us to have dates as x-axis
-	mean_df = df.groupby(['date', 'Ticker']).mean() # avg compund score for each date
-	mean_df = mean_df.unstack() 
+	# Visualization of Sentiment Analysis
+	df['compound'].value_counts().plot(kind='bar')
 
-	# xs (cross section of compund) get rids of compund label
-	mean_df = mean_df.xs('compound', axis="columns")
-	mean_df.plot(kind='bar')
 	plt.show()
 
 
